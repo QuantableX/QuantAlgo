@@ -1,0 +1,23 @@
+node_modules
+.nuxt
+.output
+dist
+*.log
+
+# Tauri
+src-tauri/target
+src-tauri/gen
+
+# Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*

@@ -1,0 +1,338 @@
+@import 'tailwindcss';
+
+/* ── Theme Tokens ── */
+
+:root {
+  --qa-bg:             #18181e;
+  --qa-bg-sidebar:     #1f1f25;
+  --qa-bg-card:        #292930;
+  --qa-bg-hover:       #313139;
+  --qa-bg-input:       #18181e;
+  --qa-border:         #47474f;
+  --qa-border-subtle:  #4a4a55;
+  --qa-text:           #d4d4d8;
+  --qa-text-secondary: #9a9aa5;
+  --qa-text-muted:     #6e6e7a;
+  --qa-accent:         #a0a0a8;
+  --qa-accent-hover:   #b8b8c0;
+  --qa-success:        #2ed573;
+  --qa-error:          #ff4757;
+  --qa-warning:        #ffa502;
+  --qa-scrollbar-track: #18181e;
+  --qa-scrollbar-thumb: #47474f;
+  --qa-scrollbar-thumb-hover: #5a5a64;
+  --qa-radius:         8px;
+  --qa-radius-lg:      12px;
+  --qa-transition:     150ms ease;
+}
+
+[data-theme="light"] {
+  --qa-bg:             #d8d8de;
+  --qa-bg-sidebar:     #e0e0e5;
+  --qa-bg-card:        #e6e6ec;
+  --qa-bg-hover:       #c8c8d0;
+  --qa-bg-input:       #d8d8de;
+  --qa-border:         #a5a5af;
+  --qa-text:           #24242c;
+  --qa-text-secondary: #484856;
+  --qa-text-muted:     #6a6a78;
+  --qa-accent:         #4a4a52;
+  --qa-accent-hover:   #3a3a42;
+}
+
+/* ── Base ── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #__nuxt {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--qa-bg);
+  color: var(--qa-text);
+}
+
+code, pre, .mono {
+  font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* ── Scrollbars ── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--qa-scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--qa-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--qa-scrollbar-thumb-hover);
+}
+
+/* ── Utility classes ── */
+
+.text-success { color: var(--qa-success); }
+.text-error   { color: var(--qa-error); }
+.text-warning { color: var(--qa-warning); }
+.text-muted   { color: var(--qa-text-muted); }
+.text-secondary { color: var(--qa-text-secondary); }
+.text-accent  { color: var(--qa-accent); }
+
+.bg-app      { background: var(--qa-bg); }
+.bg-sidebar  { background: var(--qa-bg-sidebar); }
+.bg-card     { background: var(--qa-bg-card); }
+.bg-hover    { background: var(--qa-bg-hover); }
+
+.border-default { border-color: var(--qa-border); }
+.border-subtle  { border-color: var(--qa-border-subtle); }
+
+/* ── Card ── */
+
+.card {
+  background: var(--qa-bg-card);
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius-lg);
+  padding: 16px;
+}
+
+/* ── Pill / Chip ── */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--qa-border);
+  border-radius: 9999px;
+  color: var(--qa-text-secondary);
+  background: transparent;
+}
+
+/* ── Buttons ── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius);
+  background: var(--qa-bg-card);
+  color: var(--qa-text);
+  cursor: pointer;
+  transition: all var(--qa-transition);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--qa-bg-hover);
+  border-color: var(--qa-accent);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.btn-primary {
+  background: var(--qa-accent);
+  color: var(--qa-bg);
+  border-color: var(--qa-accent);
+}
+
+.btn-primary:hover {
+  background: var(--qa-accent-hover);
+  border-color: var(--qa-accent-hover);
+}
+
+.btn-success {
+  background: var(--qa-accent);
+  color: var(--qa-bg);
+  border-color: var(--qa-accent);
+}
+
+.btn-success:hover {
+  background: var(--qa-accent-hover);
+  border-color: var(--qa-accent-hover);
+}
+
+.btn-danger {
+  background: var(--qa-error);
+  color: #fff;
+  border-color: var(--qa-error);
+}
+
+/* ── Form Inputs ── */
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--qa-border);
+  border-radius: var(--qa-radius);
+  background: var(--qa-bg-input);
+  color: var(--qa-text);
+  transition: border-color var(--qa-transition);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--qa-accent);
+}
+
+.input::placeholder {
+  color: var(--qa-text-muted);
+}
+
+select.input {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--qa-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ── Table ── */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--qa-text-muted);
+  border-bottom: 1px solid var(--qa-border);
+}
+
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--qa-border-subtle);
+  color: var(--qa-text);
+}
+
+.table tbody tr:hover {
+  background: var(--qa-bg-hover);
+}
+
+/* ── xterm overrides ── */
+
+.xterm {
+  padding: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--qa-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* ── Monaco overrides ── */
+
+.monaco-editor,
+.monaco-editor .overflow-guard {
+  border-radius: var(--qa-radius);
+}
+
+/* ── Animations ── */
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+/* ── Drag regions (Tauri titlebar) ── */
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+/* ── Selection ── */
+
+::selection {
+  background: color-mix(in srgb, var(--qa-accent) 30%, transparent);
+  color: var(--qa-text);
+}
+
+/* ── Transition helpers ── */
+
+.transition-colors {
+  transition: color var(--qa-transition), background-color var(--qa-transition), border-color var(--qa-transition);
+}
+
+.transition-opacity {
+  transition: opacity var(--qa-transition);
+}
+
+.transition-all {
+  transition: all var(--qa-transition);
+}
