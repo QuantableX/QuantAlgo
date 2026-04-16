@@ -21,10 +21,14 @@ class Strategy:
     params: Dict[str, Any] = {}
 
     def __init__(self) -> None:
+        self.params = dict(getattr(self, "params", {}))
         self._positions: Dict[str, Position] = {}
         self._orders: List[Order] = []
         self._balance: Dict[str, float] = {}
         self._candle_history: List[Candle] = []
+        self._pair: str = "BTC/USDT"  # set by runner/engine
+        self._mark_price: Optional[float] = None
+        self._mark_prices: Dict[str, float] = {}
         self._rpc: Optional[Any] = None  # set by runner
 
     # ------------------------------------------------------------------
@@ -67,6 +71,20 @@ class Strategy:
         self._send_rpc("sell", order.to_dict())
         return order.id
 
+    def reverse(self, pair: str, side: str, position_size: float = None) -> None:
+        """Close the opposing position first, then open ``side`` with fresh balance.
+
+        ``side`` is ``"buy"`` for long or ``"sell"`` for short.  When
+        ``position_size`` is provided, the host sizes the new entry from the
+        post-close cash balance.
+        """
+        if side not in ("buy", "sell"):
+            raise ValueError("reverse side must be 'buy' or 'sell'")
+        payload = {"pair": pair, "side": side, "quantity": 0.0}
+        if position_size is not None:
+            payload["position_size"] = float(position_size)
+        self._send_rpc("reverse", payload)
+
     def close(self, position_id: str = None) -> None:
         """Close a specific position, or all positions when *position_id* is ``None``."""
         self._send_rpc("close", {"position_id": position_id})
@@ -90,6 +108,12 @@ class Strategy:
         if asset is None:
             return dict(self._balance)
         return self._balance.get(asset)
+
+    def get_mark_price(self, pair: str = None) -> Optional[float]:
+        """Return the latest mark price for *pair*, or the active pair."""
+        if pair is None:
+            pair = self._pair
+        return self._mark_prices.get(pair, self._mark_price)
 
     def get_candles(self, pair: str, timeframe: str, limit: int = 100) -> List[Candle]:
         """Return the most recent candles from local history.

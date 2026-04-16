@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useJournalStore } from '~/stores/journal'
 import { formatCurrency, formatPct, formatDuration, formatDateTime } from '~/utils/format'
-import type { Trade } from '~/types'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { BotTradeEvent, Trade } from '~/types'
 
 const journalStore = useJournalStore()
 
@@ -9,6 +10,7 @@ const journalStore = useJournalStore()
 const selectedTrade = ref<Trade | null>(null)
 const editingNotes = ref('')
 const isSavingNotes = ref(false)
+let unlistenTrade: UnlistenFn | null = null
 
 function handleSelect(trade: Trade) {
   if (selectedTrade.value?.id === trade.id) {
@@ -50,6 +52,13 @@ watch(
 
 onMounted(async () => {
   await Promise.all([journalStore.loadTrades(), journalStore.loadStats()])
+  unlistenTrade = await listen<BotTradeEvent>('bot:trade', async () => {
+    await journalStore.refresh()
+  })
+})
+
+onUnmounted(() => {
+  unlistenTrade?.()
 })
 </script>
 

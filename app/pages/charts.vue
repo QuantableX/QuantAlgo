@@ -1,21 +1,37 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
-import type { EquityPoint, Trade } from '~/types'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type { BotEquityEvent, BotTradeEvent, EquityPoint, Trade } from '~/types'
 
 // State
-const selectedTimeframe = ref('1d')
+const route = useRoute()
+const router = useRouter()
+const timeframes = ['1h', '4h', '1d', '1w', '1M', 'All'] as const
+type ChartTimeframe = typeof timeframes[number]
+
+function routeTimeframe(): ChartTimeframe {
+  const tf = route.query.tf
+  return typeof tf === 'string' && timeframes.includes(tf as ChartTimeframe)
+    ? tf as ChartTimeframe
+    : '1d'
+}
+
+const selectedTimeframe = ref<ChartTimeframe>(routeTimeframe())
 const equityData = ref<EquityPoint[]>([])
 const trades = ref<Trade[]>([])
 const isLoading = ref(false)
 const error = ref<string | null>(null)
-
-const timeframes = ['1h', '4h', '1d', '1w', '1M', 'All'] as const
+let unlistenEquity: UnlistenFn | null = null
+let unlistenTrade: UnlistenFn | null = null
 
 // Compute drawdown data from equity curve
 const drawdownData = computed<EquityPoint[]>(() => {
   if (!equityData.value.length) return []
 
-  let peak = equityData.value[0].equity
+  const firstPoint = equityData.value[0]
+  if (!firstPoint) return []
+
+  let peak = firstPoint.equity
   return equityData.value.map((point) => {
     if (point.equity > peak) peak = point.equity
     const drawdown = peak > 0 ? ((point.equity - peak) / peak) * 100 : 0
@@ -31,7 +47,7 @@ async function fetchEquityCurve() {
   error.value = null
   try {
     equityData.value = await invoke<EquityPoint[]>('get_equity_curve', {
-      source: 'live',
+      source: 'paper',
       timeframe: selectedTimeframe.value,
     })
   } catch (err) {
@@ -54,15 +70,49 @@ async function fetchTrades() {
 }
 
 function selectTimeframe(tf: string) {
-  selectedTimeframe.value = tf
+  selectedTimeframe.value = tf as ChartTimeframe
+  router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      tf,
+    },
+  })
 }
 
 watch(selectedTimeframe, () => {
   fetchEquityCurve()
 })
 
+watch(
+  () => route.query.tf,
+  () => {
+    const next = routeTimeframe()
+    if (next !== selectedTimeframe.value) {
+      selectedTimeframe.value = next
+    }
+  },
+)
+
 onMounted(async () => {
   await Promise.all([fetchEquityCurve(), fetchTrades()])
+  unlistenEquity = await listen<BotEquityEvent>('bot:equity', (event) => {
+    equityData.value = [
+      ...equityData.value,
+      {
+        time: event.payload.timestamp,
+        equity: event.payload.equity,
+      },
+    ].slice(-1000)
+  })
+  unlistenTrade = await listen<BotTradeEvent>('bot:trade', async () => {
+    await fetchTrades()
+  })
+})
+
+onUnmounted(() => {
+  unlistenEquity?.()
+  unlistenTrade?.()
 })
 </script>
 

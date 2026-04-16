@@ -42,6 +42,8 @@ function toDateString(date: Date): string {
 const now = new Date()
 const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
+const direction = ref<'both' | 'long' | 'short'>('both')
+
 const form = reactive<BacktestConfig>({
   strategy_id: initialStrategyId.value,
   exchange: 'binance',
@@ -70,8 +72,17 @@ const timeframes = [
   { value: '1d', label: '1 Day' },
 ]
 
+const directions = [
+  { value: 'both', label: 'Both' },
+  { value: 'long', label: 'Long Only' },
+  { value: 'short', label: 'Short Only' },
+]
+
 function handleSubmit() {
-  emit('run', { ...form })
+  emit('run', {
+    ...form,
+    strategy_params: { direction: direction.value },
+  })
 }
 </script>
 
@@ -179,9 +190,26 @@ function handleSubmit() {
           step="0.01"
         />
       </div>
+
+      <!-- Row 5 -->
+      <div class="field">
+        <label class="label" for="bt-direction">Direction</label>
+        <select
+          id="bt-direction"
+          v-model="direction"
+          class="input"
+        >
+          <option
+            v-for="d in directions"
+            :key="d.value"
+            :value="d.value"
+          >
+            {{ d.label }}
+          </option>
+        </select>
+      </div>
     </div>
 
-    <!-- Row 5 -->
     <button
       type="submit"
       class="btn btn-primary run-btn"

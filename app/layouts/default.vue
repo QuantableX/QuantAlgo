@@ -2,10 +2,16 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useBotStore } from '~/stores/bot'
 import { useStrategiesStore } from '~/stores/strategies'
+import { useExchangeStore } from '~/stores/exchange'
+import { useAppStore } from '~/stores/app'
+import { formatPnl } from '~/utils/format'
 import logoUrl from '~/assets/images/QuantAlgo.png'
 
 const bot = useBotStore()
 const strategies = useStrategiesStore()
+const exchangeStore = useExchangeStore()
+const appStore = useAppStore()
+const router = useRouter()
 
 // ── Sidebar collapse ──
 
@@ -20,6 +26,7 @@ const settingsOpen = ref(false)
 
 const appWindow = getCurrentWindow()
 const isMaximized = ref(false)
+let unlistenResize: (() => void) | null = null
 
 async function minimizeWindow() {
   await appWindow.minimize()
@@ -34,14 +41,17 @@ async function closeWindow() {
   await appWindow.close()
 }
 
+let lastTitlebarClick = 0
+
 function onTitlebarMousedown(e: MouseEvent) {
   if ((e.target as HTMLElement).closest('button, input, select, a, .window-controls, .settings-btn, .titlebar-logo-section')) return
-  appWindow.startDragging()
-}
-
-function onTitlebarDblclick(e: MouseEvent) {
-  if ((e.target as HTMLElement).closest('button, input, select, a, .window-controls, .settings-btn, .titlebar-logo-section')) return
-  toggleMaximize()
+  const now = Date.now()
+  if (now - lastTitlebarClick < 300) {
+    toggleMaximize()
+  } else {
+    appWindow.startDragging()
+  }
+  lastTitlebarClick = now
 }
 
 // ── Status computeds ──
@@ -53,7 +63,7 @@ const statusColor = computed(() => {
 })
 
 const statusLabel = computed(() => {
-  if (bot.status === 'running') return 'Running'
+  if (bot.status === 'running') return `Running (${bot.modeLabel})`
   if (bot.status === 'error') return 'Error'
   return 'Stopped'
 })
@@ -64,25 +74,42 @@ const activeStrategyName = computed(() => {
 })
 
 const pnlDisplay = computed(() => {
-  const v = bot.pnl.today
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+  return formatPnl(bot.pnl.today).text
 })
 
 const pnlPositive = computed(() => bot.pnl.today >= 0)
 const openCount = computed(() => bot.openPositions.length)
 
-// ── Keyboard shortcuts ──
+// ── Error banner ──
 
-onMounted(() => {
+const showErrorBanner = computed(() => bot.status === 'error' && bot.lastError)
+
+function dismissError() {
+  bot.lastError = null
+}
+
+// ── App bootstrap + keyboard shortcuts ──
+
+onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   appWindow.isMaximized().then(v => { isMaximized.value = v })
-  appWindow.onResized(async () => {
+  unlistenResize = await appWindow.onResized(async () => {
     isMaximized.value = await appWindow.isMaximized()
   })
+
+  // Bootstrap all stores in parallel so titlebar/sidebar are never stale
+  await Promise.all([
+    appStore.loadSettings(),
+    bot.init(),
+    strategies.load(),
+    exchangeStore.load(),
+  ])
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  unlistenResize?.()
+  unlistenResize = null
 })
 
 function onKeydown(e: KeyboardEvent) {
@@ -100,7 +127,7 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <div class="app-shell">
     <!-- Titlebar -->
-    <div class="titlebar" @mousedown="onTitlebarMousedown" @dblclick="onTitlebarDblclick">
+    <div class="titlebar" @mousedown="onTitlebarMousedown">
       <!-- Left: Logo -->
       <div
         class="titlebar-logo-section"
@@ -150,6 +177,13 @@ function onKeydown(e: KeyboardEvent) {
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- Error Banner -->
+    <div v-if="showErrorBanner" class="error-banner">
+      <span class="error-banner__icon">&#9888;</span>
+      <span class="error-banner__msg">{{ bot.lastError }}</span>
+      <button class="error-banner__dismiss" @click="dismissError">&times;</button>
     </div>
 
     <!-- Body -->
@@ -335,7 +369,7 @@ function onKeydown(e: KeyboardEvent) {
   height: 100%;
   border: none;
   background: transparent;
-  color: var(--qa-text-muted);
+  color: var(--qa-text-secondary);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
@@ -357,6 +391,49 @@ function onKeydown(e: KeyboardEvent) {
 .window-btn-close:active {
   background: #c50f1f;
   color: #fff;
+}
+
+/* ── Error Banner ── */
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--qa-error) 15%, var(--qa-bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--qa-error) 40%, transparent);
+  font-size: 13px;
+  color: var(--qa-error);
+  flex-shrink: 0;
+}
+
+.error-banner__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.error-banner__msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error-banner__dismiss {
+  background: none;
+  border: none;
+  color: var(--qa-error);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.error-banner__dismiss:hover {
+  opacity: 1;
 }
 
 /* ── Body ── */

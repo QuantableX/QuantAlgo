@@ -120,8 +120,9 @@ function setupResizeObserver() {
   if (!chartContainer.value || !chart) return
 
   resizeObserver = new ResizeObserver((entries) => {
-    if (!chart || !entries.length) return
-    const { width } = entries[0].contentRect
+    const entry = entries[0]
+    if (!chart || !entry) return
+    const { width } = entry.contentRect
     if (width > 0) {
       chart.applyOptions({ width })
     }

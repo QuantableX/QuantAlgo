@@ -23,7 +23,7 @@ import logging
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from quantalgo.backtest_engine import BacktestConfig, BacktestEngine
 from quantalgo.models import Candle, Tick, Trade
@@ -45,8 +45,8 @@ log = logging.getLogger("quantalgo.runner")
 # Strategy loader
 # ---------------------------------------------------------------------------
 
-def _load_strategy_class(path: str) -> Type[Strategy]:
-    """Import *path* as a module and return the first Strategy subclass."""
+def _load_strategy_class(path: str) -> Tuple[Type[Strategy], List[str]]:
+    """Import *path* and return the deterministic Strategy subclass."""
     filepath = Path(path).resolve()
     if not filepath.exists():
         raise FileNotFoundError(f"Strategy file not found: {filepath}")
@@ -60,14 +60,38 @@ def _load_strategy_class(path: str) -> Type[Strategy]:
     sys.modules["_user_strategy"] = module
     spec.loader.exec_module(module)
 
-    for _name, obj in inspect.getmembers(module, inspect.isclass):
+    candidates: list[tuple[int, str, Type[Strategy]]] = []
+    for name, obj in inspect.getmembers(module, inspect.isclass):
         if issubclass(obj, Strategy) and obj is not Strategy:
-            return obj
+            try:
+                source_file = Path(inspect.getsourcefile(obj) or "").resolve()
+            except OSError:
+                source_file = filepath
+            if source_file != filepath:
+                continue
+            line_no = getattr(obj, "__firstlineno__", None)
+            if line_no is None:
+                try:
+                    _, line_no = inspect.getsourcelines(obj)
+                except OSError:
+                    line_no = 0
+            candidates.append((line_no, name, obj))
 
-    raise ValueError(
-        f"No Strategy subclass found in {filepath}. "
-        "Define a class that inherits from quantalgo.Strategy."
-    )
+    if not candidates:
+        raise ValueError(
+            f"No Strategy subclass found in {filepath}. "
+            "Define a class that inherits from quantalgo.Strategy."
+        )
+
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    warnings: List[str] = []
+    if len(candidates) > 1:
+        warnings.append(
+            "Multiple Strategy subclasses found; using "
+            f"{candidates[0][1]} by source order."
+        )
+
+    return candidates[0][2], warnings
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +102,71 @@ def _write(msg: dict) -> None:
     """Write a JSON line to stdout and flush."""
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
+
+
+def _snapshot_positions(raw: Any) -> Dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    return {}
+
+
+def _apply_state_snapshot(strategy: Strategy, params: dict) -> None:
+    if "pair" in params and params["pair"]:
+        strategy._pair = str(params["pair"])
+
+    if "candles" in params and isinstance(params["candles"], list):
+        strategy._candle_history = [
+            Candle.from_dict(candle)
+            for candle in params["candles"]
+            if isinstance(candle, dict)
+        ]
+
+    if "balance" in params and isinstance(params["balance"], dict):
+        strategy._balance = {
+            str(asset): float(amount)
+            for asset, amount in params["balance"].items()
+        }
+
+    if "positions" in params:
+        from quantalgo.models import Position
+
+        strategy._positions = {
+            str(pair): Position.from_dict(position)
+            for pair, position in _snapshot_positions(params.get("positions")).items()
+        }
+
+    mark_price = params.get("mark_price")
+    pair = params.get("pair") or strategy._pair
+    if mark_price is not None:
+        strategy._mark_price = float(mark_price)
+        if pair:
+            strategy._mark_prices[str(pair)] = float(mark_price)
+
+
+def _apply_trade_update(strategy: Strategy, trade: Trade, params: dict) -> None:
+    _apply_state_snapshot(strategy, params)
+    strategy._pair = trade.pair or strategy._pair
+    strategy._mark_price = trade.price
+    if trade.pair:
+        strategy._mark_prices[trade.pair] = trade.price
+
+    if "positions" in params:
+        return
+
+    if trade.action == "close":
+        strategy._positions.pop(trade.pair, None)
+        return
+
+    if trade.action == "open":
+        from quantalgo.models import Position
+
+        strategy._positions[trade.pair] = Position(
+            pair=trade.pair,
+            side=trade.side,
+            entry_price=trade.price,
+            quantity=trade.quantity,
+            unrealized_pnl=0.0,
+        )
 
 
 def _read_line() -> Optional[dict]:
@@ -120,6 +209,9 @@ def _run_live(strategy: Strategy) -> None:
             result = _dispatch(strategy, method, params)
             if msg_id is not None:
                 _write({"id": msg_id, "result": result})
+            if result == "exit":
+                log.info("Stop requested -- exiting")
+                break
         except Exception:
             tb = traceback.format_exc()
             log.error("Error handling method=%s:\n%s", method, tb)
@@ -134,28 +226,33 @@ def _dispatch(strategy: Strategy, method: str, params: dict) -> Any:
     """Route an incoming JSON-RPC method to the right handler."""
     if method == "on_candle":
         candle = Candle.from_dict(params)
+        if candle.pair:
+            strategy._pair = candle.pair
+            strategy._mark_prices[candle.pair] = candle.close
+        strategy._mark_price = candle.close
         strategy._candle_history.append(candle)
         strategy.on_candle(candle)
         return "ok"
 
     if method == "on_tick":
         tick = Tick.from_dict(params)
+        strategy._pair = tick.pair
+        strategy._mark_price = tick.price
+        strategy._mark_prices[tick.pair] = tick.price
         strategy.on_tick(tick)
         return "ok"
 
     if method == "on_trade":
         trade = Trade.from_dict(params)
+        _apply_trade_update(strategy, trade, params)
         strategy.on_trade(trade)
         return "ok"
 
     if method == "start":
-        # Optionally receive initial balance / positions
-        if "balance" in params:
-            strategy._balance = params["balance"]
-        if "positions" in params:
-            from quantalgo.models import Position
-            for k, v in params["positions"].items():
-                strategy._positions[k] = Position.from_dict(v)
+        new_params = params.get("params", {})
+        if isinstance(new_params, dict):
+            strategy.params.update(new_params)
+        _apply_state_snapshot(strategy, params)
         strategy.on_start()
         return "ok"
 
@@ -166,6 +263,7 @@ def _dispatch(strategy: Strategy, method: str, params: dict) -> Any:
     if method == "configure":
         new_params = params.get("params", {})
         strategy.params.update(new_params)
+        _apply_state_snapshot(strategy, params)
         return "ok"
 
     log.warning("Unknown method: %s", method)
@@ -212,6 +310,29 @@ def _run_backtest(strategy: Strategy) -> None:
     log.info("Backtest complete -- %d trades", len(result["trades"]))
 
 
+def _run_validate(strategy_path: str) -> int:
+    """Validate that a strategy can be imported and instantiated."""
+    try:
+        cls, warnings = _load_strategy_class(strategy_path)
+        strategy = cls()
+        if not isinstance(strategy, Strategy):
+            raise TypeError(f"{cls.__name__} did not instantiate a Strategy")
+        _write({
+            "ok": True,
+            "class_name": cls.__name__,
+            "warnings": warnings,
+        })
+        return 0
+    except Exception:
+        tb = traceback.format_exc()
+        log.error("Strategy validation failed:\n%s", tb)
+        _write({
+            "ok": False,
+            "error": tb,
+        })
+        return 1
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -229,16 +350,26 @@ def main() -> None:
         action="store_true",
         help="Run in backtest mode (read JSON blob from stdin)",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate strategy import and instantiation, then exit",
+    )
     args = parser.parse_args()
 
+    if args.validate:
+        sys.exit(_run_validate(args.strategy_path))
+
     try:
-        cls = _load_strategy_class(args.strategy_path)
+        cls, warnings = _load_strategy_class(args.strategy_path)
     except Exception as exc:
         log.error("Failed to load strategy: %s", exc)
         sys.exit(1)
 
     strategy = cls()
     log.info("Loaded strategy: %s", cls.__name__)
+    for warning in warnings:
+        log.warning(warning)
 
     if args.backtest:
         _run_backtest(strategy)

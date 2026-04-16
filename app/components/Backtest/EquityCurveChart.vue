@@ -29,7 +29,7 @@ let resizeObserver: ResizeObserver | null = null
 
 function toChartData(points: EquityPoint[]) {
   return points.map((p) => ({
-    time: p.time as import('lightweight-charts').Time,
+    time: (Math.floor(new Date(p.time).getTime() / 1000)) as import('lightweight-charts').UTCTimestamp,
     value: p.equity,
   }))
 }

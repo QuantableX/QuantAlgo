@@ -30,6 +30,7 @@ class BacktestConfig:
     commission_pct: float = 0.1       # 0.1 %  per fill
     slippage_pct: float = 0.05        # 0.05 % simulated slippage on market orders
     base_asset: str = "USDT"
+    pair: str = "BTC/USDT"
 
     @classmethod
     def from_dict(cls, d: dict) -> "BacktestConfig":
@@ -38,6 +39,7 @@ class BacktestConfig:
             commission_pct=float(d.get("commission_pct", 0.1)),
             slippage_pct=float(d.get("slippage_pct", 0.05)),
             base_asset=d.get("base_asset", "USDT"),
+            pair=d.get("pair", "BTC/USDT"),
         )
 
 
@@ -258,12 +260,13 @@ class BacktestEngine:
     # ----- Equity tracking -------------------------------------------------
 
     def _compute_equity(self, candle: dict) -> float:
-        """Balance + unrealized PnL of all open positions."""
+        """Balance + market value of all open positions."""
         equity = self.balance
         close_price = float(candle["close"])
         for pos in self.positions.values():
             if pos.side == "long":
-                equity += (close_price - pos.entry_price) * pos.quantity
+                # balance already had entry_price*qty deducted, so add back full market value
+                equity += close_price * pos.quantity
             else:
                 equity += (pos.entry_price - close_price) * pos.quantity
         return equity
@@ -273,6 +276,7 @@ class BacktestEngine:
     def run(self) -> Dict[str, Any]:
         """Execute the backtest and return a result dict."""
         self.strategy._balance = {self.cfg.base_asset: self.cfg.initial_balance}
+        self.strategy._pair = self.cfg.pair
         self.strategy.on_start()
 
         for idx, raw in enumerate(self.raw_candles):

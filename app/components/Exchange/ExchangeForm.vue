@@ -3,7 +3,7 @@ import type { Exchange, ExchangeConfig, ExchangeType, ExchangeProvider } from '~
 
 const props = defineProps<{
   exchange?: Exchange
-  visible: boolean
+  visible?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +40,11 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+function providerLabel(p: ExchangeProvider): string {
+  const name = capitalize(p)
+  return exchangeType.value === 'dex' ? `${name} (stored credentials only)` : name
+}
+
 function resetForm() {
   name.value = ''
   exchangeType.value = 'cex'
@@ -66,7 +71,7 @@ function prefillForm() {
 }
 
 watch(() => props.visible, (val) => {
-  if (val) {
+  if (val !== false) {
     prefillForm()
   }
 })
@@ -88,7 +93,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 watch(() => props.visible, (val) => {
-  if (val) {
+  if (val !== false) {
     prefillForm()
     window.addEventListener('keydown', onKeydown)
   } else {
@@ -123,7 +128,7 @@ function handleSubmit() {
 
 <template>
   <Teleport to="body">
-    <div v-if="visible" class="modal-backdrop" @click="onBackdropClick">
+    <div v-if="visible !== false" class="modal-backdrop" @click="onBackdropClick">
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">{{ modalTitle }}</h3>
@@ -175,9 +180,12 @@ function handleSubmit() {
                 :key="p"
                 :value="p"
               >
-                {{ capitalize(p) }}
+                {{ providerLabel(p) }}
               </option>
             </select>
+            <p v-if="exchangeType === 'dex'" class="form-note">
+              DEX credentials can be stored here, but deploy and pair discovery are not supported yet.
+            </p>
           </div>
 
           <!-- CEX fields -->
@@ -364,6 +372,13 @@ function handleSubmit() {
   color: var(--qa-text-muted);
   text-transform: none;
   letter-spacing: 0;
+}
+
+.form-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--qa-warning);
 }
 
 .type-toggle {

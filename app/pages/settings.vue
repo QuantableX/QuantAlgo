@@ -30,7 +30,7 @@ watch(
 )
 
 // Auto-save with debounce
-const { stop: stopWatch } = watchDebounced(
+const stopWatch = watchDebounced(
   localSettings,
   async () => {
     await saveAllSettings()
@@ -194,7 +194,7 @@ onUnmounted(() => {
           type="number"
           class="input settings__input--sm"
           min="0.1"
-          max="100"
+          max="10"
           step="0.1"
         />
       </div>
@@ -207,7 +207,7 @@ onUnmounted(() => {
           type="number"
           class="input settings__input--sm"
           min="1"
-          max="50"
+          max="20"
         />
       </div>
 
@@ -219,7 +219,20 @@ onUnmounted(() => {
           type="number"
           class="input settings__input--sm"
           min="0"
-          max="10"
+          max="5"
+          step="0.01"
+        />
+      </div>
+
+      <div class="settings__field">
+        <label class="label" for="paper-fee">Paper Fee (%)</label>
+        <input
+          id="paper-fee"
+          v-model.number="localSettings.paper_fee_pct"
+          type="number"
+          class="input settings__input--sm"
+          min="0"
+          max="5"
           step="0.01"
         />
       </div>

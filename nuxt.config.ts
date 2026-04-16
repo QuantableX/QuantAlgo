@@ -1,9 +1,18 @@
 import tailwindcss from '@tailwindcss/vite'
 import pkg from './package.json'
 
+const appManifestStubUrl = new URL('./app/shims/app-manifest.ts', import.meta.url).pathname
+const appManifestStub = decodeURIComponent(
+  /^\/[A-Za-z]:/.test(appManifestStubUrl) ? appManifestStubUrl.slice(1) : appManifestStubUrl,
+)
+
 export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
+
+  experimental: {
+    appManifest: false,
+  },
 
   runtimeConfig: {
     public: {
@@ -31,8 +40,17 @@ export default defineNuxtConfig({
     },
   },
 
+  alias: {
+    '#app-manifest': appManifestStub,
+  },
+
   vite: {
     plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        '#app-manifest': appManifestStub,
+      },
+    },
     optimizeDeps: {
       include: ['monaco-editor', 'lightweight-charts'],
     },

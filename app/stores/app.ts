@@ -17,6 +17,7 @@ export const useAppStore = defineStore('app', () => {
     risk_per_trade: 1,
     max_concurrent_positions: 3,
     slippage_tolerance: 0.1,
+    paper_fee_pct: 0.1,
     notify_on_trade: true,
     notify_on_error: true,
     notify_on_daily_summary: false,
@@ -76,9 +77,10 @@ export const useAppStore = defineStore('app', () => {
 
   async function detectPython(): Promise<string> {
     try {
-      const path = await invoke<string>('detect_python')
-      settings.value.python_path = path
-      return path
+      const path = await invoke<string | null>('detect_python')
+      const resolved = path ?? settings.value.python_path ?? ''
+      settings.value.python_path = resolved
+      return resolved
     } catch (err) {
       console.error('[app store] Failed to detect Python:', err)
       throw err

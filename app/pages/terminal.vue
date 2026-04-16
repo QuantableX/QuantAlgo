@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const botTerminalRef = ref<InstanceType<typeof BotTerminal> | null>(null)
+const botTerminalRef = ref<{ clear: () => void; getContent?: () => string } | null>(null)
 const autoScroll = ref(true)
 
 function handleClear() {

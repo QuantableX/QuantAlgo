@@ -82,7 +82,7 @@ const statRows = computed<StatRow[]>(() => {
     <div class="section">
       <div class="section-title">Equity Curves</div>
       <BacktestEquityCurveChart
-        v-if="overlayData.length > 0"
+        v-if="overlayData.length > 0 && overlayData[0]"
         :data="overlayData[0].data"
         :overlays="overlayData"
         :height="400"

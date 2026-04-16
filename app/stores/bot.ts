@@ -7,6 +7,8 @@ import type {
   BotStatus,
   LogEntry,
   Trade,
+  TradingMode,
+  PreflightResult,
   BotLogEvent,
   BotTradeEvent,
   BotStatusEvent,
@@ -31,15 +33,19 @@ export const useBotStore = defineStore('bot', () => {
   const activeExchangeId = ref<string | null>(null)
   const activePair = ref<string | null>(null)
   const startedAt = ref<string | null>(null)
+  const tradingMode = ref<TradingMode>('paper')
   const openPositions = ref<Trade[]>([])
   const recentLogs = ref<LogEntry[]>([])
   const equity = ref<number>(0)
+  const lastPrice = ref<number>(0)
+  const paperBalance = ref<number>(0)
   const pnl = ref<PnlSummary>({
     today: 0,
     week: 0,
     month: 0,
     all: 0,
   })
+  const lastError = ref<string | null>(null)
 
   const isInitialized = ref(false)
   const unlistenHandlers = ref<UnlistenFn[]>([])
@@ -47,33 +53,84 @@ export const useBotStore = defineStore('bot', () => {
   // ── Getters ──
 
   const isRunning = computed(() => status.value === 'running')
+  const isPaper = computed(() => tradingMode.value === 'paper')
+  const modeLabel = computed(() => tradingMode.value === 'paper' ? 'Paper' : 'Live')
 
   const uptime = computed(() => {
     if (!startedAt.value || status.value !== 'running') return 0
     return Math.floor((Date.now() - new Date(startedAt.value).getTime()) / 1000)
   })
 
+  function applyStatus(result: BotStatus) {
+    status.value = result.status
+    activeStrategyId.value = result.strategy_id
+    activeExchangeId.value = result.exchange_id
+    activePair.value = result.pair
+    startedAt.value = result.started_at
+    tradingMode.value = result.trading_mode ?? 'paper'
+    if (result.status !== 'error') {
+      lastError.value = null
+    }
+  }
+
+  function upsertOpenPosition(trade: Trade) {
+    const existingIdx = openPositions.value.findIndex((position) => position.id === trade.id)
+
+    if (trade.exit_price === null) {
+      if (existingIdx === -1) {
+        openPositions.value.push(trade)
+      } else {
+        openPositions.value.splice(existingIdx, 1, trade)
+      }
+      return
+    }
+
+    if (existingIdx !== -1) {
+      openPositions.value.splice(existingIdx, 1)
+    }
+  }
+
   // ── Actions ──
+
+  async function runPreflight(
+    strategyId: string,
+    exchangeId: string,
+    pair: string,
+    mode: TradingMode,
+    config?: Record<string, unknown>,
+  ): Promise<PreflightResult> {
+    try {
+      return await invoke<PreflightResult>('validate_bot_deploy', {
+        strategyId,
+        exchangeId,
+        pair,
+        tradingMode: mode,
+        config: config ?? null,
+      })
+    } catch (err) {
+      console.error('[bot store] Preflight failed:', err)
+      throw err
+    }
+  }
 
   async function start(
     strategyId: string,
     exchangeId: string,
     pair: string,
     config?: Record<string, unknown>,
+    mode: TradingMode = 'paper',
   ) {
     try {
-      await invoke('start_bot', {
+      const result = await invoke<BotStatus>('start_bot', {
         strategyId,
         exchangeId,
         pair,
-        config: config ? JSON.stringify(config) : null,
+        config: config ?? null,
+        tradingMode: mode,
       })
-      status.value = 'running'
-      activeStrategyId.value = strategyId
-      activeExchangeId.value = exchangeId
-      activePair.value = pair
-      startedAt.value = new Date().toISOString()
+      applyStatus(result)
     } catch (err) {
+      lastError.value = String(err)
       console.error('[bot store] Failed to start bot:', err)
       throw err
     }
@@ -81,9 +138,9 @@ export const useBotStore = defineStore('bot', () => {
 
   async function stop() {
     try {
-      await invoke('stop_bot')
-      status.value = 'stopped'
-      startedAt.value = null
+      const result = await invoke<BotStatus>('stop_bot')
+      applyStatus(result)
+      openPositions.value = []
     } catch (err) {
       console.error('[bot store] Failed to stop bot:', err)
       throw err
@@ -93,11 +150,7 @@ export const useBotStore = defineStore('bot', () => {
   async function refreshStatus() {
     try {
       const result = await invoke<BotStatus>('get_bot_status')
-      status.value = result.status
-      activeStrategyId.value = result.strategy_id
-      activeExchangeId.value = result.exchange_id
-      activePair.value = result.pair
-      startedAt.value = result.started_at
+      applyStatus(result)
     } catch (err) {
       console.error('[bot store] Failed to refresh status:', err)
     }
@@ -132,12 +185,18 @@ export const useBotStore = defineStore('bot', () => {
     try {
       // Fetch current status on init
       await refreshStatus()
+      await loadLogs(MAX_LOG_ENTRIES)
 
       const unlistenStatus = await listen<BotStatusEvent>('bot:status', (event) => {
         status.value = event.payload.status
         activeStrategyId.value = event.payload.strategy_id
+        activeExchangeId.value = event.payload.exchange_id ?? null
+        activePair.value = event.payload.pair ?? null
+        startedAt.value = event.payload.started_at ?? null
+        tradingMode.value = event.payload.trading_mode ?? 'paper'
         if (event.payload.status === 'stopped') {
-          startedAt.value = null
+          openPositions.value = []
+          lastError.value = null
         }
       })
 
@@ -152,29 +211,27 @@ export const useBotStore = defineStore('bot', () => {
 
       const unlistenTrade = await listen<BotTradeEvent>('bot:trade', (event) => {
         const trade = event.payload.trade
-        // Add to open positions if no exit, remove if closed
-        if (trade.exit_price === null) {
-          openPositions.value.push(trade)
-        } else {
-          openPositions.value = openPositions.value.filter((t) => t.id !== trade.id)
-          // Update PnL if trade has realized pnl
-          if (trade.pnl !== null) {
-            pnl.value.today += trade.pnl
-            pnl.value.all += trade.pnl
-          }
+        upsertOpenPosition(trade)
+
+        if (trade.exit_price !== null && trade.pnl !== null) {
+          pnl.value.today += trade.pnl
+          pnl.value.all += trade.pnl
         }
       })
 
       const unlistenEquity = await listen<BotEquityEvent>('bot:equity', (event) => {
         equity.value = event.payload.equity
+        if (event.payload.last_price !== undefined) {
+          lastPrice.value = event.payload.last_price
+        }
+        if (event.payload.balance !== undefined) {
+          paperBalance.value = event.payload.balance
+        }
       })
 
       const unlistenError = await listen<BotErrorEvent>('bot:error', (event) => {
-        addLog({
-          timestamp: new Date().toISOString(),
-          level: 'error',
-          message: event.payload.message,
-        })
+        status.value = 'error'
+        lastError.value = event.payload.message
         if (event.payload.details) {
           console.error('[bot store] Bot error details:', event.payload.details)
         }
@@ -207,14 +264,21 @@ export const useBotStore = defineStore('bot', () => {
     activeExchangeId,
     activePair,
     startedAt,
+    tradingMode,
     openPositions,
     recentLogs,
     equity,
+    lastPrice,
+    paperBalance,
     pnl,
+    lastError,
     // Getters
     isRunning,
+    isPaper,
+    modeLabel,
     uptime,
     // Actions
+    runPreflight,
     start,
     stop,
     refreshStatus,

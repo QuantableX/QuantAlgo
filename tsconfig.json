@@ -3,5 +3,9 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true
-  }
+  },
+  "exclude": [
+    "src-tauri/target",
+    "src-tauri/gen"
+  ]
 }

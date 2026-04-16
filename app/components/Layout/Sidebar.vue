@@ -9,6 +9,7 @@ const navItems = [
   { icon: '\u2630', label: 'Journal', to: '/journal' },
   { icon: '\u25E7', label: 'Charts', to: '/charts' },
   { icon: '\u2699', label: 'Exchange', to: '/exchange' },
+  { icon: '\u26ED', label: 'Settings', to: '/settings' },
 ]
 
 function isActive(to: string): boolean {

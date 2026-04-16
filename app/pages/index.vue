@@ -2,7 +2,7 @@
 import { useBotStore } from '~/stores/bot'
 import { useStrategiesStore } from '~/stores/strategies'
 import { useExchangeStore } from '~/stores/exchange'
-import { formatPnl, formatPrice, formatTime, formatDuration } from '~/utils/format'
+import { formatCurrency, formatPnl, formatPrice, formatTime, formatDuration } from '~/utils/format'
 import type { LogEntry } from '~/types'
 
 const router = useRouter()
@@ -39,7 +39,7 @@ const statusDotClass = computed(() => {
 
 const statusLabel = computed(() => {
   switch (botStore.status) {
-    case 'running': return 'Running'
+    case 'running': return `Running (${botStore.modeLabel})`
     case 'error': return 'Error'
     default: return 'Stopped'
   }
@@ -67,18 +67,60 @@ function logLevelClass(level: LogEntry['level']): string {
   }
 }
 
+// Current mark price for an open position
+function currentPrice(pos: { pair: string; entry_price: number; exit_price: number | null }): number {
+  // For open positions, use the latest mark price from the bot store if available.
+  if (pos.exit_price !== null) return pos.exit_price
+  if (botStore.lastPrice > 0 && botStore.activePair === pos.pair) return botStore.lastPrice
+  return pos.entry_price
+}
+
 // Position PnL (unrealized)
 function unrealizedPnl(entry: number, current: number, qty: number, side: 'long' | 'short'): number {
   if (side === 'long') return (current - entry) * qty
   return (entry - current) * qty
 }
 
+function positionAmount(entry: number, qty: number): number {
+  return entry * qty
+}
+
+// Deploy modal (for starting from dashboard)
+const showDeployModal = ref(false)
+const isSavingStrategy = ref(false)
+const saveBeforeDeployError = ref<string | null>(null)
+
 // Actions
 async function handleStartStop() {
   if (botStore.isRunning) {
     await botStore.stop()
+  } else if (strategiesStore.activeStrategyId) {
+    saveBeforeDeployError.value = null
+    showDeployModal.value = true
   } else {
     router.push('/strategies')
+  }
+}
+
+function handleDeployStarted() {
+  showDeployModal.value = false
+}
+
+async function handleSaveFirst() {
+  if (!strategiesStore.activeStrategyId) return
+  isSavingStrategy.value = true
+  saveBeforeDeployError.value = null
+  try {
+    await strategiesStore.save(
+      strategiesStore.activeStrategyId,
+      strategiesStore.editorContent,
+      strategiesStore.paramsContent,
+    )
+  } catch (err) {
+    saveBeforeDeployError.value = String(err)
+    console.error('Failed to save strategy before deploy:', err)
+  } finally {
+    isSavingStrategy.value = false
   }
 }
 
@@ -86,13 +128,8 @@ function navigateTo(path: string) {
   router.push(path)
 }
 
-onMounted(async () => {
-  await Promise.all([
-    botStore.init(),
-    botStore.refreshStatus(),
-    strategiesStore.load(),
-    exchangeStore.load(),
-  ])
+onMounted(() => {
+  // Stores are bootstrapped in default.vue layout — no need to re-init here
   uptimeInterval = setInterval(() => {
     now.value = Date.now()
   }, 1000)
@@ -122,6 +159,15 @@ onUnmounted(() => {
             <div class="status-row">
               <span class="status-row__label">Pair</span>
               <span class="status-row__value">{{ botStore.activePair ?? '--' }}</span>
+            </div>
+            <div class="status-row">
+              <span class="status-row__label">Mode</span>
+              <span
+                class="status-row__value"
+                :class="botStore.isPaper ? '' : 'text-warning'"
+              >
+                {{ botStore.modeLabel }}
+              </span>
             </div>
             <div class="status-row">
               <span class="status-row__label">Uptime</span>
@@ -166,6 +212,7 @@ onUnmounted(() => {
               <tr>
                 <th>Pair</th>
                 <th>Side</th>
+                <th>Amount</th>
                 <th>Entry</th>
                 <th>Current</th>
                 <th>Unrealized PnL</th>
@@ -177,14 +224,15 @@ onUnmounted(() => {
                 <td :class="pos.side === 'long' ? 'text-accent' : 'text-error'">
                   {{ pos.side.toUpperCase() }}
                 </td>
+                <td>{{ formatCurrency(positionAmount(pos.entry_price, pos.quantity)) }}</td>
                 <td>{{ formatPrice(pos.entry_price) }}</td>
-                <td>{{ formatPrice(pos.exit_price ?? pos.entry_price) }}</td>
+                <td>{{ formatPrice(currentPrice(pos)) }}</td>
                 <td
-                  :class="unrealizedPnl(pos.entry_price, pos.exit_price ?? pos.entry_price, pos.quantity, pos.side) >= 0
+                  :class="unrealizedPnl(pos.entry_price, currentPrice(pos), pos.quantity, pos.side) >= 0
                     ? 'text-success'
                     : 'text-error'"
                 >
-                  {{ formatPnl(unrealizedPnl(pos.entry_price, pos.exit_price ?? pos.entry_price, pos.quantity, pos.side)).text }}
+                  {{ formatPnl(unrealizedPnl(pos.entry_price, currentPrice(pos), pos.quantity, pos.side)).text }}
                 </td>
               </tr>
             </tbody>
@@ -207,6 +255,17 @@ onUnmounted(() => {
         <p v-else class="empty-state text-muted">No recent activity</p>
       </div>
     </div>
+
+    <!-- Deploy Modal -->
+    <DeployModal
+      :visible="showDeployModal"
+      :strategy-id="strategiesStore.activeStrategyId"
+      :is-dirty="strategiesStore.isDirty || isSavingStrategy"
+      :save-error="saveBeforeDeployError"
+      @close="showDeployModal = false"
+      @save-first="handleSaveFirst"
+      @started="handleDeployStarted"
+    />
 
     <!-- Quick Actions -->
     <div class="quick-actions">

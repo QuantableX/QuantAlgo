@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { BotLogEvent } from '~/types'
+import type { BotLogEvent, LogEntry } from '~/types'
 
 const props = withDefaults(
   defineProps<{
@@ -64,7 +65,11 @@ function getContent(): string {
     }
   }
   // Remove trailing empty lines
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+  while (lines.length > 0) {
+    const lastLine = lines[lines.length - 1]
+    if (!lastLine || lastLine.trim() !== '') {
+      break
+    }
     lines.pop()
   }
   return lines.join('\n')
@@ -136,7 +141,27 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(() => {
     fitAddon?.fit()
   })
-  resizeObserver.observe(containerRef.value)
+  if (containerRef.value) {
+    resizeObserver.observe(containerRef.value)
+  }
+
+  // Load historical logs so we don't miss startup/preflight output
+  try {
+    const historicalLogs = await invoke<LogEntry[]>('get_bot_logs', { limit: 500, offset: 0 })
+    if (historicalLogs.length > 0) {
+      term.writeln('\x1b[90m-- Historical logs --\x1b[0m')
+      for (const log of historicalLogs) {
+        writeLine({
+          timestamp: log.timestamp,
+          level: log.level,
+          message: log.message,
+        })
+      }
+      term.writeln('\x1b[90m-- Current session --\x1b[0m')
+    }
+  } catch {
+    // Historical logs unavailable, continue with new events only
+  }
 
   // Listen for bot log events from Tauri
   unlisten = await listen<BotLogEvent>('bot:log', (event) => {

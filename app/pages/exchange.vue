@@ -9,12 +9,15 @@ const showForm = ref(false)
 const editingExchange = ref<Exchange | null>(null)
 const isDeleting = ref(false)
 
-function handleSelect(exchange: Exchange) {
-  exchangeStore.setActive(exchange.id)
-  exchangeStore.refreshBalances(exchange.id)
+async function handleSelect(exchangeId: string) {
+  exchangeStore.setActive(exchangeId)
+  await exchangeStore.refreshBalances(exchangeId)
 }
 
-async function handleDelete(exchange: Exchange) {
+async function handleDelete(exchangeId: string) {
+  const exchange = exchangeStore.exchanges.find((item) => item.id === exchangeId)
+  if (!exchange) return
+
   const confirmed = window.confirm(
     `Are you sure you want to remove "${exchange.name}"? This cannot be undone.`,
   )
@@ -41,6 +44,21 @@ async function handleSubmit(config: ExchangeConfig) {
     editingExchange.value = null
   } catch (err) {
     console.error('Failed to save exchange:', err)
+  }
+}
+
+async function handleTestConnection() {
+  if (!editingExchange.value) {
+    window.alert('Save the exchange first, then test the stored connection.')
+    return
+  }
+
+  try {
+    const result = await exchangeStore.testConnection(editingExchange.value.id)
+    window.alert(result.message)
+  } catch (err) {
+    console.error('Failed to test exchange connection:', err)
+    window.alert('Connection test failed.')
   }
 }
 
@@ -154,9 +172,10 @@ onMounted(async () => {
 
     <!-- Exchange Form Modal -->
     <ExchangeForm
-      v-if="showForm"
-      :exchange="editingExchange"
+      :visible="showForm"
+      :exchange="editingExchange ?? undefined"
       @submit="handleSubmit"
+      @test-connection="handleTestConnection"
       @close="closeForm"
     />
   </div>

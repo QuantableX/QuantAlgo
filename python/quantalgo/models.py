@@ -13,6 +13,7 @@ class Candle:
     low: float
     close: float
     volume: float
+    pair: str = ""
 
     @classmethod
     def from_dict(cls, d: dict) -> "Candle":
@@ -23,6 +24,7 @@ class Candle:
             low=float(d["low"]),
             close=float(d["close"]),
             volume=float(d["volume"]),
+            pair=str(d.get("pair", "")),
         )
 
     def to_dict(self) -> dict:
@@ -60,6 +62,7 @@ class Trade:
     quantity: float
     time: str
     pnl: float = 0.0
+    action: str = "fill"  # 'open' | 'close' | 'fill'
 
     @classmethod
     def from_dict(cls, d: dict) -> "Trade":
@@ -71,6 +74,7 @@ class Trade:
             quantity=float(d["quantity"]),
             time=d["time"],
             pnl=float(d.get("pnl", 0.0)),
+            action=str(d.get("action", "fill")),
         )
 
     def to_dict(self) -> dict:
@@ -116,6 +120,9 @@ class Position:
     entry_price: float
     quantity: float
     unrealized_pnl: float = 0.0
+    id: str = ""
+    entry_fee: float = 0.0
+    reserved_margin: float = 0.0
 
     @classmethod
     def from_dict(cls, d: dict) -> "Position":
@@ -125,6 +132,9 @@ class Position:
             entry_price=float(d["entry_price"]),
             quantity=float(d["quantity"]),
             unrealized_pnl=float(d.get("unrealized_pnl", 0.0)),
+            id=str(d.get("id", "")),
+            entry_fee=float(d.get("entry_fee", 0.0)),
+            reserved_margin=float(d.get("reserved_margin", 0.0)),
         )
 
     def to_dict(self) -> dict:

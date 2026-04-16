@@ -73,6 +73,7 @@ export interface BacktestConfig {
   end_date: string
   initial_capital: number
   commission: number
+  strategy_params?: Record<string, unknown>
 }
 
 export interface BacktestStats {
@@ -158,6 +159,7 @@ export interface Balance {
 // ── Bot ──
 
 export type BotStatusType = 'running' | 'stopped' | 'error'
+export type TradingMode = 'paper' | 'live'
 
 export interface BotStatus {
   status: BotStatusType
@@ -166,12 +168,42 @@ export interface BotStatus {
   pair: string | null
   started_at: string | null
   config_json: string | null
+  trading_mode: TradingMode
 }
 
 export interface LogEntry {
   timestamp: string
   level: 'info' | 'trade' | 'warn' | 'error'
   message: string
+}
+
+// ── Deploy / Preflight ──
+
+export interface DeployConfig {
+  strategy_id: string
+  exchange_id: string
+  pair: string
+  trading_mode: TradingMode
+  timeframe: string
+  initial_balance: number
+  risk_per_trade: number
+  max_positions: number
+  slippage: number
+  fee: number
+}
+
+export type PreflightSeverity = 'ok' | 'warn' | 'error'
+
+export interface PreflightCheck {
+  id: string
+  label: string
+  status: PreflightSeverity
+  message: string
+}
+
+export interface PreflightResult {
+  checks: PreflightCheck[]
+  can_start: boolean
 }
 
 // ── Settings ──
@@ -187,6 +219,7 @@ export interface AppSettings {
   risk_per_trade: number
   max_concurrent_positions: number
   slippage_tolerance: number
+  paper_fee_pct: number
   notify_on_trade: boolean
   notify_on_error: boolean
   notify_on_daily_summary: boolean
@@ -207,11 +240,19 @@ export interface BotTradeEvent {
 export interface BotStatusEvent {
   status: BotStatusType
   strategy_id: string | null
+  exchange_id: string | null
+  pair: string | null
+  started_at: string | null
+  trading_mode: TradingMode
 }
 
 export interface BotEquityEvent {
   timestamp: string
   equity: number
+  last_price?: number
+  pair?: string
+  balance?: number
+  open_position_count?: number
 }
 
 export interface BotErrorEvent {

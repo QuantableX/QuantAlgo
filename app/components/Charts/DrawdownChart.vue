@@ -28,7 +28,10 @@ function toTimestamp(iso: string): UTCTimestamp {
 const drawdownData = computed(() => {
   if (!props.data.length) return []
 
-  let peak = props.data[0].equity
+  const firstPoint = props.data[0]
+  if (!firstPoint) return []
+
+  let peak = firstPoint.equity
   return props.data.map((p) => {
     if (p.equity > peak) peak = p.equity
     const dd = peak > 0 ? ((p.equity - peak) / peak) * 100 : 0
@@ -90,7 +93,7 @@ function initChart() {
     lineColor: '#ff4757',
     topColor: 'rgba(255,71,87,0.02)',
     bottomColor: 'rgba(255,71,87,0.25)',
-    lineWidth: 1.5,
+    lineWidth: 2,
     priceFormat: {
       type: 'custom',
       formatter: (price: number) => `${price.toFixed(2)}%`,
@@ -105,8 +108,9 @@ function setupResizeObserver() {
   if (!chartContainer.value || !chart) return
 
   resizeObserver = new ResizeObserver((entries) => {
-    if (!chart || !entries.length) return
-    const { width } = entries[0].contentRect
+    const entry = entries[0]
+    if (!chart || !entry) return
+    const { width } = entry.contentRect
     if (width > 0) {
       chart.applyOptions({ width })
     }

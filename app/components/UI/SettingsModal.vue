@@ -23,6 +23,7 @@ const pythonPath = ref(app.settings.python_path)
 const riskPerTrade = ref(app.settings.risk_per_trade)
 const maxPositions = ref(app.settings.max_concurrent_positions)
 const slippageTolerance = ref(app.settings.slippage_tolerance)
+const paperFee = ref(app.settings.paper_fee_pct)
 const notifyTrade = ref(app.settings.notify_on_trade)
 const notifyError = ref(app.settings.notify_on_error)
 const notifyDailySummary = ref(app.settings.notify_on_daily_summary)
@@ -42,6 +43,7 @@ watch(() => props.visible, (open) => {
     riskPerTrade.value = app.settings.risk_per_trade
     maxPositions.value = app.settings.max_concurrent_positions
     slippageTolerance.value = app.settings.slippage_tolerance
+    paperFee.value = app.settings.paper_fee_pct
     notifyTrade.value = app.settings.notify_on_trade
     notifyError.value = app.settings.notify_on_error
     notifyDailySummary.value = app.settings.notify_on_daily_summary
@@ -85,6 +87,10 @@ function saveMaxPositions() {
 
 function saveSlippage() {
   app.saveSettings({ slippage_tolerance: slippageTolerance.value })
+}
+
+function savePaperFee() {
+  app.saveSettings({ paper_fee_pct: paperFee.value })
 }
 
 function savePythonPath() {
@@ -222,7 +228,7 @@ onMounted(() => {
                     v-model.number="riskPerTrade"
                     type="number"
                     class="setting-input setting-input--narrow"
-                    min="0.1" max="100" step="0.1"
+                    min="0.1" max="10" step="0.1"
                     @blur="saveRisk"
                     @keydown.enter="saveRisk"
                   />
@@ -233,7 +239,7 @@ onMounted(() => {
                     v-model.number="maxPositions"
                     type="number"
                     class="setting-input setting-input--narrow"
-                    min="1" max="50"
+                    min="1" max="20"
                     @blur="saveMaxPositions"
                     @keydown.enter="saveMaxPositions"
                   />
@@ -244,9 +250,20 @@ onMounted(() => {
                     v-model.number="slippageTolerance"
                     type="number"
                     class="setting-input setting-input--narrow"
-                    min="0" max="10" step="0.01"
+                    min="0" max="5" step="0.01"
                     @blur="saveSlippage"
                     @keydown.enter="saveSlippage"
+                  />
+                </div>
+                <div class="setting-row">
+                  <span class="setting-text">Paper Fee (%)</span>
+                  <input
+                    v-model.number="paperFee"
+                    type="number"
+                    class="setting-input setting-input--narrow"
+                    min="0" max="5" step="0.01"
+                    @blur="savePaperFee"
+                    @keydown.enter="savePaperFee"
                   />
                 </div>
               </div>

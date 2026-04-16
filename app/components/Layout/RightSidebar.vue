@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { useBotStore } from '~/stores/bot'
+import { useBacktestStore } from '~/stores/backtest'
+import { useExchangeStore } from '~/stores/exchange'
+import { useJournalStore } from '~/stores/journal'
 import { useStrategiesStore } from '~/stores/strategies'
+import { formatDate, formatPnl } from '~/utils/format'
 
 const route = useRoute()
+const router = useRouter()
 const bot = useBotStore()
+const backtests = useBacktestStore()
+const exchangeStore = useExchangeStore()
+const journalStore = useJournalStore()
 const strategies = useStrategiesStore()
 
 // ── Context section title ──
@@ -13,7 +21,7 @@ const sectionTitle = computed(() => {
     case '/': return 'Overview'
     case '/strategies': return 'Strategies'
     case '/backtest': return 'Backtest Results'
-    case '/terminal': return 'Log Filters'
+    case '/terminal': return 'Terminal'
     case '/journal': return 'Journal Filters'
     case '/charts': return 'Chart Options'
     case '/exchange': return 'Exchanges'
@@ -24,15 +32,6 @@ const sectionTitle = computed(() => {
 
 // ── Terminal log filter state ──
 
-const logFilters = reactive({
-  info: true,
-  trade: true,
-  warn: true,
-  error: true,
-})
-
-const terminalStrategyFilter = ref<string>('')
-
 // ── Journal filter state ──
 
 const journalDateFrom = ref('')
@@ -40,14 +39,78 @@ const journalDateTo = ref('')
 const journalStrategy = ref<string>('')
 const journalPair = ref('')
 const journalSide = ref<string>('')
+const journalMinPnl = ref<number | null>(null)
 
 // ── Charts state ──
 
 const chartTimeframes = ['1h', '4h', '1d', '1w', '1M', 'All'] as const
-const selectedTimeframe = ref<string>('1d')
-const showVolume = ref(true)
-const showMA = ref(false)
-const showBollingerBands = ref(false)
+const selectedTimeframe = computed(() => {
+  const tf = route.query.tf
+  return typeof tf === 'string' && chartTimeframes.includes(tf as typeof chartTimeframes[number])
+    ? tf
+    : '1d'
+})
+
+const savedBacktests = computed(() => backtests.backtests.slice(0, 8))
+const activeExchanges = computed(() => exchangeStore.exchanges)
+
+watch(
+  () => journalStore.filters,
+  (filters) => {
+    journalDateFrom.value = filters.from_date ?? ''
+    journalDateTo.value = filters.to_date ?? ''
+    journalStrategy.value = filters.strategy_id ?? ''
+    journalPair.value = filters.pair ?? ''
+    journalSide.value = filters.side ?? ''
+    journalMinPnl.value = filters.min_pnl ?? null
+  },
+  { deep: true, immediate: true },
+)
+
+watchDebounced(
+  [journalDateFrom, journalDateTo, journalStrategy, journalPair, journalSide, journalMinPnl],
+  async () => {
+    if (route.path !== '/journal')
+      return
+
+    await journalStore.updateFilters({
+      from_date: journalDateFrom.value || undefined,
+      to_date: journalDateTo.value || undefined,
+      strategy_id: journalStrategy.value || undefined,
+      pair: journalPair.value || undefined,
+      side: (journalSide.value || undefined) as 'long' | 'short' | undefined,
+      min_pnl: journalMinPnl.value ?? undefined,
+    })
+  },
+  { debounce: 300 },
+)
+
+async function loadBacktest(id: string) {
+  try {
+    await backtests.get(id)
+  } catch (err) {
+    console.error('Failed to load backtest from sidebar:', err)
+  }
+}
+
+async function selectExchange(exchangeId: string) {
+  exchangeStore.setActive(exchangeId)
+  try {
+    await exchangeStore.refreshBalances(exchangeId)
+  } catch (err) {
+    console.error('Failed to refresh exchange balances:', err)
+  }
+}
+
+function setChartTimeframe(tf: string) {
+  router.replace({
+    path: route.path,
+    query: {
+      ...route.query,
+      tf,
+    },
+  })
+}
 </script>
 
 <template>
@@ -63,13 +126,17 @@ const showBollingerBands = ref(false)
             <span class="row-label">Equity</span>
             <span class="row-value mono">${{ bot.equity.toLocaleString() }}</span>
           </div>
+          <div v-if="bot.isRunning && bot.paperBalance > 0" class="context-row">
+            <span class="row-label">Cash</span>
+            <span class="row-value mono">${{ bot.paperBalance.toLocaleString(undefined, { maximumFractionDigits: 2 }) }}</span>
+          </div>
           <div class="context-row">
             <span class="row-label">Today PnL</span>
             <span
               class="row-value mono"
               :class="bot.pnl.today >= 0 ? 'text-success' : 'text-error'"
             >
-              {{ bot.pnl.today >= 0 ? '+' : '' }}{{ bot.pnl.today.toFixed(2) }}%
+              {{ formatPnl(bot.pnl.today).text }}
             </span>
           </div>
           <div class="context-row">
@@ -80,6 +147,16 @@ const showBollingerBands = ref(false)
         <div class="context-section">
           <div class="context-sublabel">Active Pair</div>
           <div class="context-value">{{ bot.activePair ?? 'None' }}</div>
+          <div v-if="bot.isRunning && bot.lastPrice > 0" class="context-row" style="margin-top: 4px;">
+            <span class="row-label">Mark Price</span>
+            <span class="row-value mono">${{ bot.lastPrice.toLocaleString(undefined, { maximumFractionDigits: 4 }) }}</span>
+          </div>
+        </div>
+        <div class="context-section">
+          <div class="context-sublabel">Trading Mode</div>
+          <div class="context-value" :class="bot.isPaper ? '' : 'text-warning'">
+            {{ bot.modeLabel }}
+          </div>
         </div>
       </template>
 
@@ -103,46 +180,29 @@ const showBollingerBands = ref(false)
 
       <!-- Backtest context -->
       <template v-else-if="route.path === '/backtest'">
-        <div class="context-empty">
+        <div v-if="!savedBacktests.length" class="context-empty">
           No saved results
+        </div>
+        <div v-else class="strategy-list">
+          <button
+            v-for="backtest in savedBacktests"
+            :key="backtest.id"
+            class="strategy-item"
+            :class="{ active: backtests.activeBacktestId === backtest.id }"
+            @click="loadBacktest(backtest.id)"
+          >
+            <span class="strategy-name">{{ backtest.name }}</span>
+          </button>
         </div>
       </template>
 
       <!-- Terminal context -->
       <template v-else-if="route.path === '/terminal'">
         <div class="context-section">
-          <div class="context-sublabel">Log Level</div>
-          <div class="filter-checks">
-            <label class="check-label">
-              <input v-model="logFilters.info" type="checkbox" />
-              <span>INFO</span>
-            </label>
-            <label class="check-label">
-              <input v-model="logFilters.trade" type="checkbox" />
-              <span>TRADE</span>
-            </label>
-            <label class="check-label">
-              <input v-model="logFilters.warn" type="checkbox" />
-              <span>WARN</span>
-            </label>
-            <label class="check-label">
-              <input v-model="logFilters.error" type="checkbox" />
-              <span>ERROR</span>
-            </label>
+          <div class="context-sublabel">Log Stream</div>
+          <div class="context-value">
+            Latest bot, preflight, and strategy events are shown in the terminal.
           </div>
-        </div>
-        <div class="context-section">
-          <div class="context-sublabel">Strategy Filter</div>
-          <select v-model="terminalStrategyFilter" class="input input-sm">
-            <option value="">All strategies</option>
-            <option
-              v-for="strat in strategies.strategies"
-              :key="strat.id"
-              :value="strat.id"
-            >
-              {{ strat.name }}
-            </option>
-          </select>
         </div>
       </template>
 
@@ -195,6 +255,15 @@ const showBollingerBands = ref(false)
             <option value="short">Short</option>
           </select>
         </div>
+        <div class="context-section">
+          <div class="context-sublabel">Minimum PnL</div>
+          <input
+            v-model.number="journalMinPnl"
+            type="number"
+            class="input input-sm"
+            placeholder="0"
+          />
+        </div>
       </template>
 
       <!-- Charts context -->
@@ -207,35 +276,30 @@ const showBollingerBands = ref(false)
               :key="tf"
               class="btn btn-sm tf-btn"
               :class="{ active: selectedTimeframe === tf }"
-              @click="selectedTimeframe = tf"
+              @click="setChartTimeframe(tf)"
             >
               {{ tf }}
             </button>
-          </div>
-        </div>
-        <div class="context-section">
-          <div class="context-sublabel">Overlays</div>
-          <div class="filter-checks">
-            <label class="check-label">
-              <input v-model="showVolume" type="checkbox" />
-              <span>Volume</span>
-            </label>
-            <label class="check-label">
-              <input v-model="showMA" type="checkbox" />
-              <span>Moving Average</span>
-            </label>
-            <label class="check-label">
-              <input v-model="showBollingerBands" type="checkbox" />
-              <span>Bollinger Bands</span>
-            </label>
           </div>
         </div>
       </template>
 
       <!-- Exchange context -->
       <template v-else-if="route.path === '/exchange'">
-        <div class="context-empty">
+        <div v-if="!activeExchanges.length" class="context-empty">
           No exchanges configured
+        </div>
+        <div v-else class="strategy-list">
+          <button
+            v-for="exchange in activeExchanges"
+            :key="exchange.id"
+            class="strategy-item"
+            :class="{ active: exchangeStore.activeExchangeId === exchange.id }"
+            @click="selectExchange(exchange.id)"
+          >
+            <span class="strategy-name">{{ exchange.name }}</span>
+            <span class="item-meta">{{ formatDate(exchange.updated_at) }}</span>
+          </button>
         </div>
       </template>
 
@@ -362,6 +426,12 @@ const showBollingerBands = ref(false)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.item-meta {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--qa-text-muted);
 }
 
 /* ── Filters ── */
